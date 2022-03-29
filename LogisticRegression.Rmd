@@ -1,0 +1,292 @@
+---
+title: "Logistic Regression"
+author: "Walid Farah"
+date: "29/03/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+# 1.Loading Different Required Libraries.
+
+```{r warning=FALSE, include=FALSE}
+library(leaps)
+library(devtools)
+library(VIM)
+library(pscl)
+library(ResourceSelection)
+require(HH)
+require(pscl)
+require(ggplot2)
+require(gridExtra)
+require(scales)
+library(car)
+
+
+```
+
+# 2.Loading, Preparing and Cleaning the Data.
+
+```{r echo=FALSE, warning=FALSE}
+Loans = read.csv("data.csv")
+Loans[Loans == "NA"] = NA
+sum(is.na(Loans))#sum of the na value
+colMeans(is.na(Loans))
+rowMeans(is.na(Loans))
+Loans = na.omit(Loans)#removing or dropping the NA as it's less than 5% of the Data
+Loans[Loans == "NA"] = NA
+sum(is.na(Loans))
+
+```
+
+# 3.Exploring and Transforming the Data
+
+```{r echo=FALSE, warning=FALSE}
+summary(Loans)
+Loans$state=NULL #dropping the State Variable
+Loans$loanID = NULL # dropping the Id Variable
+Loans$employment = NULL # dropping employemnt variable
+summary(Loans)
+Loans$status = as.factor(Loans$status)
+levels(Loans$status) = list("Good"=c("Fully Paid"),"Bad"=c('Charged Off',"In Grace Period","Late (16-30 days)","Late (31-120 days)"))
+Loans$verified = as.factor(Loans$verified)
+levels(Loans$verified) = list("Verified"=c("Verified","Source Verified"),"Not Verified"=c("Not Verified"))
+sum(is.na(Loans))
+Loans = na.omit(Loans)
+table(Loans$status)
+Loans$status = as.character(Loans$status)
+Loans$length = as.character(Loans$length)
+Loans$reason = as.character(Loans$reason)
+Loans$amount = as.numeric(Loans$amount)
+Loans$rate =  as.numeric(Loans$rate)
+Loans$term = as.character.Date(Loans$term)
+Loans$grade = as.character(Loans$grade)
+Loans$length = as.character.Date(Loans$length)
+Loans$home = as.character(Loans$home)
+Loans$payment =  as.numeric(Loans$payment)
+Loans$income =  as.numeric(Loans$income)
+Loans$debtIncRat =  as.numeric(Loans$debtIncRat)
+Loans$delinq2yr =  as.numeric(Loans$delinq2yr)
+Loans$inq6mth =  as.numeric(Loans$inq6mth)
+Loans$openAcc =  as.numeric(Loans$openAcc)
+Loans$pubRec =  as.numeric(Loans$pubRec)
+Loans$revolRatio  =  as.numeric(Loans$revolRatio)
+Loans$totalAcc  =  as.numeric(Loans$totalAcc)
+Loans$totalPaid  =  as.numeric(Loans$totalPaid)
+Loans$totalBal  =  as.numeric(Loans$totalBal)
+Loans$totalRevLim  =  as.numeric(Loans$totalRevLim)
+Loans$accOpen24 	 =  as.numeric(Loans$accOpen24)
+Loans$avgBal  =  as.numeric(Loans$avgBal)
+Loans$bcOpen  =  as.numeric(Loans$bcOpen )
+Loans$bcRatio =  as.numeric(Loans$bcRatio)
+Loans$totalLim  =  as.numeric(Loans$totalLim)
+Loans$totalRevBal  =  as.numeric(Loans$totalRevBal)
+Loans$totalBcLim  =  as.numeric(Loans$totalBcLim)
+Loans$totalIlLim  =  as.numeric(Loans$totalIlLim )
+LoansInt = Loans
+LoansInt$verified = NULL
+LoansInt$term = NULL
+LoansInt$status = NULL
+LoansInt$grade = NULL
+LoansInt$length = NULL
+LoansInt$home = NULL
+LoansInt$reason = NULL
+LoansInt
+print(paste("The Profit made by the Bank is :",as.integer(sum(Loans$totalPaid-Loans$amount)),"$"))
+
+```
+
+```{r echo=FALSE, warning=FALSE}
+Cormat = cor(LoansInt,use = 'everything',method = "pearson")
+Cormat
+corrplot::corrplot(Cormat, method="circle", type = "upper",tl.col="black", title="Correlation",mar=c(1,0,1,0))
+boxplot(Loans$inq6mth ~ Loans$status, data = Loans,xlab ="Status",ylab="Inquiry in the Last 6months" , col = "lightgray")
+
+ggplot(Loans) +
+  aes(x = amount, y = totalPaid, colour = status) +
+  geom_point(shape = "circle", size = 1.5) +
+  scale_color_hue(direction = 1) +
+  labs(x = "Loan Amount", y = "Total Paid", color = "Status") +
+  theme_minimal()
+
+ggplot(Loans) +
+  aes(x = status, fill = grade) +
+  geom_bar() +
+  scale_fill_manual(
+    values = c(A = "#F8766D",
+    B = "#BD9A00",
+    C = "#31B425",
+    D = "#00C19F",
+    E = "#20AFEC",
+    F = "#B280FC",
+    G = "#FF61C3")
+  ) +
+  theme_gray()
+
+
+```
+
+# 4.The Preparing Train and Test dataset for Model
+
+```{r echo=TRUE, warning=FALSE}
+samplingsize = floor(0.80 * nrow(Loans)) #to know what is the 80% of my Data
+set.seed(123)
+samplingsize
+traindata = sample(seq_len(nrow(Loans)),size = samplingsize)
+TrainLoans = Loans[traindata,] # saving 80% of the data as training data
+TrainLoans
+TestLoans = Loans[-traindata,]#Saving 20% of the Data in Test dataset
+TestLoans
+TrainLoans$status = as.factor(TrainLoans$status)#convert to factor variable
+```
+
+# 5. LGM "Logistic Regression Model using GLM
+
+```{r echo=TRUE, warning=FALSE}
+LrgModel = glm(status ~ .,data = TrainLoans, family = 'binomial')
+summary(LrgModel)
+prLrg = predict(LrgModel, newdata = TestLoans, type = "response") # to do prediction
+trs = 0.5#threshold of 0.5
+prediction = cut(prLrg, breaks=c(-Inf,trs, Inf), labels=c("Bad", "Good"), header = TRUE)
+PrEdCAL= table(prediction,TestLoans$status)
+addmargins(PrEdCAL)
+
+PLevel = round(sum(diag(PrEdCAL)) / sum(PrEdCAL)*100 ,2) # Percentage correctly predicted
+bad = round(diag(PrEdCAL)[1]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate correctly predicted bad loans
+good = round((PrEdCAL)[4]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate correctly predicted good loans
+incbad = round((PrEdCAL)[3]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate incorrectly predicted bad loans
+incgood = round((PrEdCAL)[2]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate incorrectly predicted good loans
+print(paste0('Correctly predicted loans = ', PLevel,'%'))
+print(paste0('Correctly predicted as Bad loans ', bad ,'% ', 'and as Good loans is ',good,'%'))
+print(paste0('Incorrectly predicted as bad loans ', incbad,'% ', 'and as good loans is ',incgood,'%'))
+```
+
+# 6.Balancing the Data as 50/50 Good/Bad
+
+```{r echo=FALSE, warning=FALSE}
+table(TrainLoans$status) # 6681 Bad and 21376 good Loans
+Badt = TrainLoans[TrainLoans$status=='Bad',]
+Radd = sample(6681, 14695, replace = TRUE)
+Balanced = rbind(TrainLoans, Badt[Radd,] )
+TrainLoans = Balanced
+table(TrainLoans$status)
+```
+
+# 7.LGM "Logistic Regression Model in GLM with balanced Data
+
+```{r echo=TRUE, warning=FALSE}
+
+set.seed(123)
+LrgModel = glm(status ~ .,data = TrainLoans, family = 'binomial')
+summary(LrgModel)
+prLrg = predict(LrgModel, newdata = TestLoans, type = "response") # to do prediction
+trs = 0.5#threshold of 0.5
+prediction = cut(prLrg, breaks=c(-Inf,trs, Inf), labels=c("Bad", "Good"), header = TRUE)
+PrEdCAL= table(prediction,TestLoans$status)
+addmargins(PrEdCAL)
+
+PLevel = round(sum(diag(PrEdCAL)) / sum(PrEdCAL)*100 ,2) # Percentage correctly predicted
+bad = round(diag(PrEdCAL)[1]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate correctly predicted bad loans
+good = round((PrEdCAL)[4]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate correctly predicted good loans
+incbad = round((PrEdCAL)[3]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate incorrectly predicted bad loans
+incgood = round((PrEdCAL)[2]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate incorrectly predicted good loans
+
+print(paste0('Correctly predicted loans = ', PLevel,'%'))
+print(paste0('Correctly predicted as Bad loans ', bad ,'% ', 'and as Good loans is ',good,'%'))
+print(paste0('Incorrectly predicted as bad loans ', incbad,'% ', 'and as good loans is ',incgood,'%'))
+```
+
+# 8.Using Step wise regression Model AIC for Best fit Line.
+
+```{r echo=TRUE, warning=FALSE}
+vif(LrgModel)
+Fmodel = glm(status ~.,data = TrainLoans, family = 'binomial')
+step(Fmodel,scope=list(lower=Fmodel,upper=LrgModel),direction="both", trace=0)
+stepAIC(Fmodel, direction = "both")
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+FLgrM =glm(formula = status ~ amount + term + rate + payment + grade + 
+    length + debtIncRat + delinq2yr + inq6mth + openAcc + revolRatio + 
+    totalAcc + totalPaid + totalBal + totalRevLim + bcOpen + 
+    bcRatio + totalLim + totalRevBal + totalBcLim + totalIlLim, 
+    family = "binomial", data = TrainLoans)
+
+summary(FLgrM)
+vif(FLgrM)
+prLrg = predict(FLgrM, newdata = TestLoans, type = "response") # to do prediction
+trs = 0.5#threshold of 0.5
+prediction = cut(prLrg, breaks=c(-Inf,trs, Inf), labels=c("Bad", "Good"), header = TRUE)
+PrEdCAL= table(prediction,TestLoans$status)
+addmargins(PrEdCAL)
+
+PLevel = round(sum(diag(PrEdCAL)) / sum(PrEdCAL)*100 ,2) # Percentage correctly predicted
+bad = round(diag(PrEdCAL)[1]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate correctly predicted bad loans
+good = round((PrEdCAL)[4]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate correctly predicted good loans
+incbad = round((PrEdCAL)[3]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate incorrectly predicted bad loans
+incgood = round((PrEdCAL)[2]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate incorrectly predicted good loans
+print(paste0('Correctly predicted loans = ', PLevel,'%'))
+print(paste0('Correctly predicted as Bad loans ', bad ,'% ', 'and as Good loans is ',good,'%'))
+print(paste0('Incorrectly predicted as bad loans ', incbad,'% ', 'and as good loans is ',incgood,'%'))
+```
+
+# 9.Optimizing The Model  Threshold for Profit.
+
+## 9.1. Threshold at 0.8 
+
+```{r echo=FALSE, warning=FALSE}
+prLrg = predict(FLgrM, newdata = TestLoans, type = "response") # to do prediction
+trs = 0.8#threshold of 0.8
+prediction = cut(prLrg, breaks=c(-Inf,trs, Inf), labels=c("Bad", "Good"), header = TRUE)
+PrEdCAL= table(prediction,TestLoans$status)
+addmargins(PrEdCAL)
+
+PLevel = round(sum(diag(PrEdCAL)) / sum(PrEdCAL)*100 ,2) # Percentage correctly predicted
+bad = round(diag(PrEdCAL)[1]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate correctly predicted bad loans
+good = round((PrEdCAL)[4]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate correctly predicted good loans
+incbad = round((PrEdCAL)[3]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate incorrectly predicted bad loans
+incgood = round((PrEdCAL)[2]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate incorrectly predicted good loans
+print(paste0('Correctly predicted loans = ', PLevel,'%'))
+print(paste0('Correctly predicted as Bad loans ', bad ,'% ', 'and as Good loans is ',good,'%'))
+print(paste0('Incorrectly predicted as bad loans ', incbad,'% ', 'and as good loans is ',incgood,'%'))
+prediction = as.data.frame(prediction)
+TestLoans = cbind(TestLoans,prediction)
+Profit = TestLoans$totalPaid - TestLoans$amount 
+TestLoans$Profit = Profit
+profitG = TestLoans$Profit[TestLoans$prediction =='Good']
+SUMP= round(sum(profitG))
+SUMN=round(sum(Profit))
+print(paste0("The normal profit is $",SUMN," and the predicted profit is $",SUMP))
+
+
+```
+
+##  9.2. Threshold at 0.3
+
+```{r echo=FALSE, warning=FALSE}
+prLrg = predict(FLgrM, newdata = TestLoans, type = "response") # to do prediction
+trs = 0.3#threshold of 0.3
+prediction2 = cut(prLrg, breaks=c(-Inf,trs, Inf), labels=c("Bad", "Good"), header = TRUE)
+PrEdCAL= table(prediction2,TestLoans$status)
+addmargins(PrEdCAL)
+
+PLevel = round(sum(diag(PrEdCAL)) / sum(PrEdCAL)*100 ,2) # Percentage correctly predicted
+bad = round(diag(PrEdCAL)[1]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate correctly predicted bad loans
+good = round((PrEdCAL)[4]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate correctly predicted good loans
+incbad = round((PrEdCAL)[3]*100/(diag(PrEdCAL)[1]+(PrEdCAL)[3]),2) # to calculate incorrectly predicted bad loans
+incgood = round((PrEdCAL)[2]*100/((PrEdCAL)[2]+(PrEdCAL)[4]),2) # to calculate incorrectly predicted good loans
+print(paste0('Correctly predicted loans = ', PLevel,'%'))
+print(paste0('Correctly predicted as Bad loans ', bad ,'% ', 'and as Good loans is ',good,'%'))
+print(paste0('Incorrectly predicted as bad loans ', incbad,'% ', 'and as good loans is ',incgood,'%'))
+prediction2 = as.data.frame(prediction2)
+TestLoans = cbind(TestLoans,prediction2)
+Profit = TestLoans$totalPaid - TestLoans$amount 
+TestLoans$Profit = Profit
+profitG = TestLoans$Profit[TestLoans$prediction2 =='Good']
+SUMP2= round(sum(profitG))
+SUMN2=round(sum(Profit))
+print(paste0("The normal profit is $",SUMN2," and the predicted profit is $",SUMP2))
+```
