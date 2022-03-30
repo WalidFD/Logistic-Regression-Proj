@@ -1,7 +1,6 @@
 ---
 title: "Logistic Regression"
 author: "Walid Farah"
-date: "29/03/2022"
 output: pdf_document
 ---
 
